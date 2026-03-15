@@ -13,7 +13,6 @@ public final class TerminalBuffer {
     private final ArrayDeque<TerminalLine> scrollback;
     private int cursorRow;
     private int cursorCol;
-    private CellAttributes currentAttributes;
 
     public TerminalBuffer(int width, int height, int maxScrollback) {
         if (width <= 0)       throw new IllegalArgumentException("width must be > 0, got: " + width);
@@ -30,7 +29,7 @@ public final class TerminalBuffer {
         this.scrollback = new ArrayDeque<>();
         this.cursorRow = 0;
         this.cursorCol = 0;
-        this.currentAttributes = CellAttributes.DEFAULT;
+        CellAttributes currentAttributes = CellAttributes.DEFAULT;
     }
 
     TerminalLine[] getScreen()     { return screen; }
@@ -41,4 +40,17 @@ public final class TerminalBuffer {
     public int getCursorRow()      { return cursorRow; }
     public int getCursorCol()      { return cursorCol; }
     public int getScrollbackSize() { return scrollback.size(); }
+
+    public void setCursor(int row, int col) {
+        if (row < 0 || row >= height) {
+            throw new IllegalArgumentException(
+                    "row " + row + " out of bounds for height " + height);
+        }
+        if (col < 0 || col >= width) {
+            throw new IllegalArgumentException(
+                    "col " + col + " out of bounds for width " + width);
+        }
+        this.cursorRow = row;
+        this.cursorCol = col;
+    }
 }

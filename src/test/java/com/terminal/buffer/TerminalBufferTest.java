@@ -4,6 +4,7 @@ import com.terminal.model.CellAttributes;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
@@ -45,6 +46,35 @@ class TerminalBufferTest {
     void scrollbackIsInitiallyEmpty() {
         TerminalBuffer buffer = new TerminalBuffer(80, 24, 1000);
         assertThat(buffer.getScrollbackSize()).isZero();
+    }
+
+    @ParameterizedTest(name = "row={0}, col={1}")
+    @CsvSource({
+        "0,  0",
+        "23, 79",
+        "12, 40",
+    })
+    void setCursorUpdatesPosition(int row, int col) {
+        TerminalBuffer buffer = new TerminalBuffer(80, 24, 1000);
+        buffer.setCursor(row, col);
+        assertThat(buffer.getCursorRow()).isEqualTo(row);
+        assertThat(buffer.getCursorCol()).isEqualTo(col);
+    }
+
+    @ParameterizedTest(name = "row={0}")
+    @ValueSource(ints = {-1, -100, 24, 25})
+    void setCursorThrowsForInvalidRow(int row) {
+        TerminalBuffer buffer = new TerminalBuffer(80, 24, 1000);
+        assertThatExceptionOfType(IllegalArgumentException.class)
+                .isThrownBy(() -> buffer.setCursor(row, 0));
+    }
+
+    @ParameterizedTest(name = "col={0}")
+    @ValueSource(ints = {-1, -100, 80, 81})
+    void setCursorThrowsForInvalidCol(int col) {
+        TerminalBuffer buffer = new TerminalBuffer(80, 24, 1000);
+        assertThatExceptionOfType(IllegalArgumentException.class)
+                .isThrownBy(() -> buffer.setCursor(0, col));
     }
 
     @ParameterizedTest(name = "width={0}, height={1}, maxScrollback={2}")
