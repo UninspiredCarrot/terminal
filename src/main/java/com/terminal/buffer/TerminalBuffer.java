@@ -220,6 +220,45 @@ public final class TerminalBuffer {
         screen[height - 1] = new TerminalLine(width);
     }
 
+    public int getTotalRows() {
+        return scrollback.size() + height;
+    }
+
+    public char getCharAt(int row, int col) {
+        return resolveRow(row, col).getCell(col).character();
+    }
+
+    public CellAttributes getAttributesAt(int row, int col) {
+        return resolveRow(row, col).getCell(col).attributes();
+    }
+
+    public String getLine(int row) {
+        TerminalLine line = resolveRow(row, 0);
+        StringBuilder sb = new StringBuilder(width);
+        for (int col = 0; col < width; col++) {
+            sb.append(line.getCell(col).character());
+        }
+        return sb.toString();
+    }
+
+    /** Resolves a unified row index into a TerminalLine. Also validates {@code col} if >= 0. */
+    private TerminalLine resolveRow(int row, int col) {
+        int total = scrollback.size() + height;
+        if (row < 0 || row >= total) {
+            throw new IndexOutOfBoundsException(
+                    "row " + row + " out of bounds for total rows " + total);
+        }
+        if (col < 0 || col >= width) {
+            throw new IndexOutOfBoundsException(
+                    "col " + col + " out of bounds for width " + width);
+        }
+        int sb = scrollback.size();
+        if (row < sb) {
+            return getScrollbackLines()[row];
+        }
+        return screen[row - sb];
+    }
+
     private static void requireNonNegative(int n, String name) {
         if (n < 0) throw new IllegalArgumentException(name + " must be >= 0, got: " + n);
     }

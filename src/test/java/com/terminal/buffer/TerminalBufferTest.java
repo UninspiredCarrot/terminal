@@ -655,4 +655,111 @@ class TerminalBufferTest {
             }
         }
     }
+
+    // --- unified coordinate system ---
+
+    @Test
+    void freshBufferRow0MapsToScreenRow0() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
+        buffer.getScreen()[0].setCell(0, new Cell('Q', CellAttributes.DEFAULT));
+
+        assertThat(buffer.getTotalRows()).isEqualTo(3);
+        assertThat(buffer.getCharAt(0, 0)).isEqualTo('Q');
+    }
+
+    @Test
+    void afterScrollingRow0IsOldestScrollbackLine() {
+        // width=5, height=2; mark each line before it scrolls off
+        TerminalBuffer buffer = new TerminalBuffer(5, 2, 100);
+        buffer.getScreen()[0].setCell(0, new Cell('A', CellAttributes.DEFAULT));
+        buffer.insertLineAtBottom(); // 'A' line → scrollback[0]
+        buffer.getScreen()[0].setCell(0, new Cell('B', CellAttributes.DEFAULT));
+        buffer.insertLineAtBottom(); // 'B' line → scrollback[1]
+
+        // scrollbackSize=2, height=2 → totalRows=4
+        // unified row 0 = scrollback[0] ('A'), row 2 = screen[0]
+        assertThat(buffer.getTotalRows()).isEqualTo(4);
+        assertThat(buffer.getCharAt(0, 0)).isEqualTo('A');
+        assertThat(buffer.getCharAt(1, 0)).isEqualTo('B');
+        assertThat(buffer.getScrollbackSize()).isEqualTo(2);
+    }
+
+    @Test
+    void screenRowsMappedCorrectlyWithScrollback() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 2, 100);
+        buffer.insertLineAtBottom(); // scrollbackSize becomes 1
+        buffer.getScreen()[0].setCell(0, new Cell('S', CellAttributes.DEFAULT));
+
+        // unified row 0 = scrollback[0], unified row 1 = screen[0]
+        int sb = buffer.getScrollbackSize();
+        assertThat(buffer.getCharAt(sb, 0)).isEqualTo('S');
+    }
+
+    @Test
+    void getCharAtReadsFromBothScrollbackAndScreen() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 2, 100);
+        CellAttributes attrs = CellAttributes.DEFAULT.withForeground(Color.GREEN);
+        buffer.getScreen()[0].setCell(2, new Cell('X', attrs));
+        buffer.insertLineAtBottom(); // 'X' line scrolls off → scrollback[0]
+        buffer.getScreen()[0].setCell(1, new Cell('Y', CellAttributes.DEFAULT));
+
+        assertThat(buffer.getCharAt(0, 2)).isEqualTo('X'); // scrollback
+        assertThat(buffer.getCharAt(1, 1)).isEqualTo('Y'); // screen
+    }
+
+    @Test
+    void getAttributesAtReadsFromBothScrollbackAndScreen() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 2, 100);
+        CellAttributes sbAttrs = CellAttributes.DEFAULT.withForeground(Color.RED);
+        CellAttributes scAttrs = CellAttributes.DEFAULT.withForeground(Color.BLUE);
+        buffer.getScreen()[0].setCell(0, new Cell('A', sbAttrs));
+        buffer.insertLineAtBottom();
+        buffer.getScreen()[0].setCell(0, new Cell('B', scAttrs));
+
+        assertThat(buffer.getAttributesAt(0, 0)).isEqualTo(sbAttrs); // scrollback
+        assertThat(buffer.getAttributesAt(1, 0)).isEqualTo(scAttrs); // screen
+    }
+
+    @Test
+    void getLineReturnsFullWidthStringFromScrollback() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 2, 100);
+        fillLine(buffer.getScreen()[0], "ABCDE");
+        buffer.insertLineAtBottom();
+
+        assertThat(buffer.getLine(0)).isEqualTo("ABCDE");
+    }
+
+    @Test
+    void getLineReturnsFullWidthStringFromScreen() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 2, 100);
+        buffer.insertLineAtBottom(); // scrollbackSize=1
+        fillLine(buffer.getScreen()[0], "HELLO");
+
+        assertThat(buffer.getLine(1)).isEqualTo("HELLO");
+    }
+
+    @ParameterizedTest(name = "row={0}")
+    @ValueSource(ints = {-1, 3})
+    void getCharAtOutOfBoundsRowThrowsIndexOutOfBoundsException(int row) {
+        // height=3, no scrollback → totalRows=3; valid rows: 0,1,2
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
+        assertThatExceptionOfType(IndexOutOfBoundsException.class)
+                .isThrownBy(() -> buffer.getCharAt(row, 0));
+    }
+
+    @ParameterizedTest(name = "col={0}")
+    @ValueSource(ints = {-1, 5})
+    void getCharAtOutOfBoundsColThrowsIndexOutOfBoundsException(int col) {
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
+        assertThatExceptionOfType(IndexOutOfBoundsException.class)
+                .isThrownBy(() -> buffer.getCharAt(0, col));
+    }
+
+    @ParameterizedTest(name = "row={0}")
+    @ValueSource(ints = {-1, 3})
+    void getLineOutOfBoundsRowThrowsIndexOutOfBoundsException(int row) {
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
+        assertThatExceptionOfType(IndexOutOfBoundsException.class)
+                .isThrownBy(() -> buffer.getLine(row));
+    }
 }
