@@ -548,11 +548,13 @@ class TerminalBufferTest {
     // --- fillLine ---
 
     @Test
-    void fillLineSetsEveryCell() {
+    void fillLineSetsEveryCellWithCurrentAttributes() {
         TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
         CellAttributes attrs = CellAttributes.DEFAULT.withForeground(Color.CYAN);
+        buffer.setCursor(1, 0);
+        buffer.setCurrentAttributes(attrs);
 
-        buffer.fillLine(1, 'X', attrs);
+        buffer.fillLine('X');
 
         TerminalLine line = buffer.getScreen()[1];
         for (int col = 0; col < buffer.getWidth(); col++) {
@@ -565,18 +567,22 @@ class TerminalBufferTest {
     void fillLineDoesNotMoveCursor() {
         TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
         buffer.setCursor(2, 3);
-        buffer.fillLine(0, 'Z', CellAttributes.DEFAULT);
+
+        buffer.fillLine('Z');
+
         assertThat(buffer.getCursorRow()).isEqualTo(2);
         assertThat(buffer.getCursorCol()).isEqualTo(3);
     }
 
     @Test
-    void fillLineWithSpaceClearsLineWithGivenAttributes() {
+    void fillLineWithSpaceClearsCurrentRowWithCurrentAttributes() {
         TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
         fillLine(buffer.getScreen()[0], "ABCDE");
         CellAttributes clearAttrs = CellAttributes.DEFAULT.withBackground(Color.BLUE);
+        buffer.setCursor(0, 0);
+        buffer.setCurrentAttributes(clearAttrs);
 
-        buffer.fillLine(0, ' ', clearAttrs);
+        buffer.fillLine(' ');
 
         TerminalLine line = buffer.getScreen()[0];
         for (int col = 0; col < buffer.getWidth(); col++) {
@@ -585,19 +591,35 @@ class TerminalBufferTest {
         }
     }
 
-    @ParameterizedTest(name = "row={0}")
-    @ValueSource(ints = {-1, -10, 3, 4})
-    void fillLineRowOutOfBoundsThrowsIllegalArgumentException(int row) {
+    @Test
+    void fillLineUsesCursorRowNotADifferentRow() {
         TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
-        assertThatExceptionOfType(IllegalArgumentException.class)
-                .isThrownBy(() -> buffer.fillLine(row, 'X', CellAttributes.DEFAULT));
+        buffer.setCursor(1, 0);
+
+        buffer.fillLine('Q');
+
+        // Row 1 filled; rows 0 and 2 untouched
+        for (int col = 0; col < buffer.getWidth(); col++) {
+            assertThat(buffer.getScreen()[1].getCell(col).character()).as("row1 col%d", col).isEqualTo('Q');
+            assertThat(buffer.getScreen()[0].getCell(col).isEmpty()).as("row0 col%d", col).isTrue();
+            assertThat(buffer.getScreen()[2].getCell(col).isEmpty()).as("row2 col%d", col).isTrue();
+        }
     }
 
     @Test
-    void fillLineNullAttributesThrowsNullPointerException() {
+    void fillLineAfterChangingCursorRowFillsNewRow() {
         TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
-        assertThatNullPointerException()
-                .isThrownBy(() -> buffer.fillLine(0, 'X', null));
+
+        buffer.setCursor(0, 0);
+        buffer.fillLine('A');
+
+        buffer.setCursor(2, 0);
+        buffer.fillLine('B');
+
+        assertThat(buffer.getScreen()[0].getCell(0).character()).isEqualTo('A');
+        assertThat(buffer.getScreen()[2].getCell(0).character()).isEqualTo('B');
+        // Row 1 is untouched
+        assertThat(buffer.getScreen()[1].getCell(0).isEmpty()).isTrue();
     }
 
     // --- clearScreen / clearAll ---
@@ -793,12 +815,12 @@ class TerminalBufferTest {
     void getFullContentWithScrollbackPutsScrollbackLinesFirst() {
         // Use fillLine so cursor movement never triggers incidental scrolls
         TerminalBuffer buffer = new TerminalBuffer(5, 2, 100);
-        buffer.fillLine(0, 'A', CellAttributes.DEFAULT);
+        buffer.setCursor(0, 0); buffer.fillLine('A');
         buffer.insertLineAtBottom();             // "AAAAA" → scrollback[0]
-        buffer.fillLine(0, 'B', CellAttributes.DEFAULT);
+        buffer.setCursor(0, 0); buffer.fillLine('B');
         buffer.insertLineAtBottom();             // "BBBBB" → scrollback[1]
-        buffer.fillLine(0, 'C', CellAttributes.DEFAULT); // screen[0] = "CCCCC"
-        buffer.fillLine(1, 'D', CellAttributes.DEFAULT); // screen[1] = "DDDDD"
+        buffer.setCursor(0, 0); buffer.fillLine('C'); // screen[0] = "CCCCC"
+        buffer.setCursor(1, 0); buffer.fillLine('D'); // screen[1] = "DDDDD"
 
         String full = buffer.getFullContent();
         String[] lines = full.split("\n");
@@ -879,12 +901,13 @@ class TerminalBufferTest {
         //   line1 → [C,D,E], spill [F] → past bottom → scroll
         //   scrollback gets line0 ([X,A,B]); screen[0]=[C,D,E]; screen[1]=[F,_,_]
         TerminalBuffer buffer = new TerminalBuffer(3, 2, 100);
-        buffer.fillLine(0, 'A', CellAttributes.DEFAULT);
+        buffer.setCursor(0, 0); buffer.fillLine('A');
         buffer.getScreen()[0].setCell(1, new Cell('B', CellAttributes.DEFAULT));
         buffer.getScreen()[0].setCell(2, new Cell('C', CellAttributes.DEFAULT));
-        buffer.fillLine(1, 'D', CellAttributes.DEFAULT);
+        buffer.setCursor(1, 0); buffer.fillLine('D');
         buffer.getScreen()[1].setCell(1, new Cell('E', CellAttributes.DEFAULT));
         buffer.getScreen()[1].setCell(2, new Cell('F', CellAttributes.DEFAULT));
+        buffer.setCursor(0, 0);
 
         buffer.insert("X");
 
@@ -900,7 +923,7 @@ class TerminalBufferTest {
         // maxScrollback=2; scroll 4 times with marked lines; only last 2 retained
         TerminalBuffer buffer = new TerminalBuffer(5, 2, 2);
         for (char c = 'A'; c <= 'D'; c++) {
-            buffer.fillLine(0, c, CellAttributes.DEFAULT);
+            buffer.setCursor(0, 0); buffer.fillLine(c);
             buffer.insertLineAtBottom();
         }
 
@@ -914,7 +937,7 @@ class TerminalBufferTest {
     @Test
     void maxScrollbackZeroDiscardsAllScrolledLinesImmediately() {
         TerminalBuffer buffer = new TerminalBuffer(5, 2, 0);
-        buffer.fillLine(0, 'X', CellAttributes.DEFAULT);
+        buffer.setCursor(0, 0); buffer.fillLine('X');
         buffer.insertLineAtBottom();
         buffer.insertLineAtBottom();
         buffer.insertLineAtBottom();

@@ -78,12 +78,11 @@ public final class TerminalBuffer {
         cursorCol = Math.min(width - 1, cursorCol + n);
     }
 
-    public void fillLine(int row, char c, CellAttributes attributes) {
-        if (row < 0 || row >= height) {
-            throw new IllegalArgumentException(
-                    "row " + row + " out of bounds for height " + height);
-        }
-        if (attributes == null) throw new NullPointerException("attributes must not be null");
+    public void fillLine(char c) {
+        fillLine(cursorRow, c, currentAttributes);
+    }
+
+    private void fillLine(int row, char c, CellAttributes attributes) {
         TerminalLine line = screen[row];
         for (int col = 0; col < width; col++) {
             line.setCell(col, new Cell(c, attributes));
