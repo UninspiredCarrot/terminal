@@ -544,4 +544,59 @@ class TerminalBufferTest {
         assertThat(buffer.getCursorRow()).isEqualTo(1);
         assertThat(buffer.getCursorCol()).isEqualTo(2);
     }
+
+    // --- fillLine ---
+
+    @Test
+    void fillLineSetsEveryCell() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
+        CellAttributes attrs = CellAttributes.DEFAULT.withForeground(Color.CYAN);
+
+        buffer.fillLine(1, 'X', attrs);
+
+        TerminalLine line = buffer.getScreen()[1];
+        for (int col = 0; col < buffer.getWidth(); col++) {
+            assertThat(line.getCell(col).character()).as("col %d char", col).isEqualTo('X');
+            assertThat(line.getCell(col).attributes()).as("col %d attrs", col).isEqualTo(attrs);
+        }
+    }
+
+    @Test
+    void fillLineDoesNotMoveCursor() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
+        buffer.setCursor(2, 3);
+        buffer.fillLine(0, 'Z', CellAttributes.DEFAULT);
+        assertThat(buffer.getCursorRow()).isEqualTo(2);
+        assertThat(buffer.getCursorCol()).isEqualTo(3);
+    }
+
+    @Test
+    void fillLineWithSpaceClearsLineWithGivenAttributes() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
+        fillLine(buffer.getScreen()[0], "ABCDE");
+        CellAttributes clearAttrs = CellAttributes.DEFAULT.withBackground(Color.BLUE);
+
+        buffer.fillLine(0, ' ', clearAttrs);
+
+        TerminalLine line = buffer.getScreen()[0];
+        for (int col = 0; col < buffer.getWidth(); col++) {
+            assertThat(line.getCell(col).isEmpty()).as("col %d isEmpty", col).isTrue();
+            assertThat(line.getCell(col).attributes()).as("col %d attrs", col).isEqualTo(clearAttrs);
+        }
+    }
+
+    @ParameterizedTest(name = "row={0}")
+    @ValueSource(ints = {-1, -10, 3, 4})
+    void fillLineRowOutOfBoundsThrowsIllegalArgumentException(int row) {
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
+        assertThatExceptionOfType(IllegalArgumentException.class)
+                .isThrownBy(() -> buffer.fillLine(row, 'X', CellAttributes.DEFAULT));
+    }
+
+    @Test
+    void fillLineNullAttributesThrowsNullPointerException() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
+        assertThatNullPointerException()
+                .isThrownBy(() -> buffer.fillLine(0, 'X', null));
+    }
 }
