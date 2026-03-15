@@ -233,4 +233,93 @@ class TerminalBufferTest {
         assertThatNullPointerException()
                 .isThrownBy(() -> buffer.setCurrentAttributes(null));
     }
+
+    // --- insertLineAtBottom / scrollUp ---
+
+    /** Stamps column 0 of the given line with a marker character for identity tracking. */
+    private static void mark(TerminalLine line, char marker) {
+        line.setCell(0, new com.terminal.model.Cell(marker, CellAttributes.DEFAULT));
+    }
+
+    private static char markerOf(TerminalLine line) {
+        return line.getCell(0).character();
+    }
+
+    @Test
+    void insertLineAtBottomMovesTopLineToScrollback() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 10);
+        mark(buffer.getScreen()[0], 'A');
+
+        buffer.insertLineAtBottom();
+
+        assertThat(buffer.getScrollbackSize()).isEqualTo(1);
+        assertThat(markerOf(buffer.getScrollbackLines()[0])).isEqualTo('A');
+    }
+
+    @Test
+    void insertLineAtBottomPlacesFreshEmptyLineAtBottom() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 10);
+        mark(buffer.getScreen()[2], 'Z');
+
+        buffer.insertLineAtBottom();
+
+        TerminalLine newBottom = buffer.getScreen()[2];
+        for (int col = 0; col < buffer.getWidth(); col++) {
+            assertThat(newBottom.getCell(col).isEmpty())
+                    .as("col %d should be empty", col)
+                    .isTrue();
+        }
+    }
+
+    @Test
+    void insertLineAtBottomShiftsContentUp() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 10);
+        mark(buffer.getScreen()[0], 'A');
+        mark(buffer.getScreen()[1], 'B');
+        mark(buffer.getScreen()[2], 'C');
+
+        buffer.insertLineAtBottom();
+
+        // A scrolled off; B is now row 0, C is now row 1
+        assertThat(markerOf(buffer.getScreen()[0])).isEqualTo('B');
+        assertThat(markerOf(buffer.getScreen()[1])).isEqualTo('C');
+    }
+
+    @Test
+    void insertLineAtBottomScrollbackGrowsByOne() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 10);
+        buffer.insertLineAtBottom();
+        assertThat(buffer.getScrollbackSize()).isEqualTo(1);
+        buffer.insertLineAtBottom();
+        assertThat(buffer.getScrollbackSize()).isEqualTo(2);
+    }
+
+    @Test
+    void scrollbackDropsOldestWhenMaxExceeded() {
+        int maxScrollback = 3;
+        TerminalBuffer buffer = new TerminalBuffer(5, 2, maxScrollback);
+
+        // Mark each row before it scrolls off so we can identify it
+        for (char c = 'A'; c <= 'E'; c++) {
+            mark(buffer.getScreen()[0], c);
+            buffer.insertLineAtBottom();
+        }
+
+        // 5 insertions with max=3: scrollback holds the 3 most recent evicted lines (C, D, E)
+        assertThat(buffer.getScrollbackSize()).isEqualTo(maxScrollback);
+        TerminalLine[] lines = buffer.getScrollbackLines();
+        assertThat(markerOf(lines[0])).isEqualTo('C');
+        assertThat(markerOf(lines[1])).isEqualTo('D');
+        assertThat(markerOf(lines[2])).isEqualTo('E');
+    }
+
+    @Test
+    void screenHeightRemainsConstantAfterScrolling() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 4, 10);
+        for (int i = 0; i < 20; i++) {
+            buffer.insertLineAtBottom();
+        }
+        assertThat(buffer.getHeight()).isEqualTo(4);
+        assertThat(buffer.getScreen()).hasSize(4);
+    }
 }

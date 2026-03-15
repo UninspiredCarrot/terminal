@@ -34,6 +34,7 @@ public final class TerminalBuffer {
     }
 
     TerminalLine[] getScreen()     { return screen; }
+    TerminalLine[] getScrollbackLines() { return scrollback.toArray(new TerminalLine[0]); }
 
     public int getWidth()          { return width; }
     public int getHeight()         { return height; }
@@ -75,11 +76,24 @@ public final class TerminalBuffer {
         cursorCol = Math.min(width - 1, cursorCol + n);
     }
 
+    public void insertLineAtBottom() {
+        scrollUp();
+    }
+
     public CellAttributes getCurrentAttributes() { return currentAttributes; }
 
     public void setCurrentAttributes(CellAttributes attributes) {
         if (attributes == null) throw new NullPointerException("attributes must not be null");
         this.currentAttributes = attributes;
+    }
+
+    private void scrollUp() {
+        if (scrollback.size() >= maxScrollback) {
+            scrollback.pollFirst();
+        }
+        scrollback.addLast(screen[0]);
+        System.arraycopy(screen, 1, screen, 0, height - 1);
+        screen[height - 1] = new TerminalLine(width);
     }
 
     private static void requireNonNegative(int n, String name) {
