@@ -1,5 +1,6 @@
 package com.terminal.buffer;
 
+import com.terminal.model.Cell;
 import com.terminal.model.CellAttributes;
 
 import java.util.ArrayDeque;
@@ -78,6 +79,23 @@ public final class TerminalBuffer {
 
     public void insertLineAtBottom() {
         scrollUp();
+    }
+
+    public void write(String text) {
+        if (text == null || text.isEmpty()) return;
+        for (int i = 0; i < text.length(); i++) {
+            screen[cursorRow].setCell(cursorCol,
+                    new Cell(text.charAt(i), currentAttributes));
+            cursorCol++;
+            if (cursorCol >= width) {
+                cursorCol = 0;
+                cursorRow++;
+                if (cursorRow >= height) {
+                    scrollUp();
+                    cursorRow = height - 1;
+                }
+            }
+        }
     }
 
     public CellAttributes getCurrentAttributes() { return currentAttributes; }

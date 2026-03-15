@@ -322,4 +322,86 @@ class TerminalBufferTest {
         assertThat(buffer.getHeight()).isEqualTo(4);
         assertThat(buffer.getScreen()).hasSize(4);
     }
+
+    // --- write ---
+
+    @Test
+    void writeUpdatesCorrectCellsAndAdvancesCursor() {
+        TerminalBuffer buffer = new TerminalBuffer(10, 5, 100);
+        buffer.setCursor(2, 3);
+        buffer.write("Hi");
+
+        assertThat(buffer.getScreen()[2].getCell(3).character()).isEqualTo('H');
+        assertThat(buffer.getScreen()[2].getCell(4).character()).isEqualTo('i');
+        assertThat(buffer.getCursorRow()).isEqualTo(2);
+        assertThat(buffer.getCursorCol()).isEqualTo(5);
+    }
+
+    @Test
+    void writeAppliesCurrentAttributes() {
+        TerminalBuffer buffer = new TerminalBuffer(10, 5, 100);
+        CellAttributes attrs = CellAttributes.DEFAULT.withForeground(Color.RED).withStyle(Style.BOLD);
+        buffer.setCurrentAttributes(attrs);
+        buffer.write("X");
+
+        assertThat(buffer.getScreen()[0].getCell(0).attributes()).isEqualTo(attrs);
+    }
+
+    @Test
+    void writeWrapsToNextLineAtRightEdge() {
+        // width=5; write 6 chars starting at col 0 → last char lands on row 1 col 0
+        TerminalBuffer buffer = new TerminalBuffer(5, 4, 100);
+        buffer.write("ABCDEF");
+
+        assertThat(buffer.getScreen()[0].getCell(4).character()).isEqualTo('E');
+        assertThat(buffer.getScreen()[1].getCell(0).character()).isEqualTo('F');
+        assertThat(buffer.getCursorRow()).isEqualTo(1);
+        assertThat(buffer.getCursorCol()).isEqualTo(1);
+    }
+
+    @Test
+    void writeTriggersScrollWhenWrappingPastLastRow() {
+        // height=2, width=5; fill both rows then write one more char
+        TerminalBuffer buffer = new TerminalBuffer(5, 2, 100);
+        mark(buffer.getScreen()[0], 'T'); // top line we expect to scroll off
+        buffer.setCursor(1, 4);           // last col of last row
+        buffer.write("X");               // fills (1,4), then wraps → scroll, cursor=(1,0)
+
+        assertThat(buffer.getScrollbackSize()).isEqualTo(1);
+        assertThat(buffer.getCursorRow()).isEqualTo(1);
+        assertThat(buffer.getCursorCol()).isEqualTo(0);
+    }
+
+    @Test
+    void writeFromLastColOfLastRowScrollsAndWraps() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
+        mark(buffer.getScreen()[0], 'F'); // this should scroll to scrollback
+        buffer.setCursor(2, 4);
+        buffer.write("Z");
+
+        // Z written at (2,4); wrap → scroll → the row shifts to [1], new empty line at [2]
+        assertThat(buffer.getScreen()[1].getCell(4).character()).isEqualTo('Z');
+        assertThat(buffer.getScrollbackSize()).isEqualTo(1);
+        assertThat(markerOf(buffer.getScrollbackLines()[0])).isEqualTo('F');
+        assertThat(buffer.getCursorRow()).isEqualTo(2);
+        assertThat(buffer.getCursorCol()).isEqualTo(0);
+    }
+
+    @Test
+    void writeNullIsNoOp() {
+        TerminalBuffer buffer = new TerminalBuffer(10, 5, 100);
+        buffer.write(null);
+        assertThat(buffer.getCursorRow()).isZero();
+        assertThat(buffer.getCursorCol()).isZero();
+        assertThat(buffer.getScreen()[0].getCell(0).isEmpty()).isTrue();
+    }
+
+    @Test
+    void writeEmptyStringIsNoOp() {
+        TerminalBuffer buffer = new TerminalBuffer(10, 5, 100);
+        buffer.setCursor(2, 3);
+        buffer.write("");
+        assertThat(buffer.getCursorRow()).isEqualTo(2);
+        assertThat(buffer.getCursorCol()).isEqualTo(3);
+    }
 }
