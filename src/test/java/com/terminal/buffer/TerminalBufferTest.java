@@ -404,4 +404,144 @@ class TerminalBufferTest {
         assertThat(buffer.getCursorRow()).isEqualTo(2);
         assertThat(buffer.getCursorCol()).isEqualTo(3);
     }
+
+    // --- insert ---
+
+    /** Fills a line with single-char cells using the given character and default attributes. */
+    private static void fillLine(TerminalLine line, String content) {
+        for (int i = 0; i < content.length(); i++) {
+            line.setCell(i, new com.terminal.model.Cell(content.charAt(i), CellAttributes.DEFAULT));
+        }
+    }
+
+    @Test
+    void insertMidLineShiftsExistingContentRight() {
+        // width=8: line1 = [A,B,C,D,E,_,_,_], insert "XY" at col 2
+        TerminalBuffer buffer = new TerminalBuffer(8, 3, 100);
+        fillLine(buffer.getScreen()[1], "ABCDE");
+        buffer.setCursor(1, 2);
+
+        buffer.insert("XY");
+
+        TerminalLine line = buffer.getScreen()[1];
+        assertThat(line.getCell(2).character()).isEqualTo('X');
+        assertThat(line.getCell(3).character()).isEqualTo('Y');
+        assertThat(line.getCell(4).character()).isEqualTo('C');
+        assertThat(line.getCell(5).character()).isEqualTo('D');
+        assertThat(line.getCell(6).character()).isEqualTo('E');
+    }
+
+    @Test
+    void insertedCellsHaveCurrentAttributesShiftedCellsRetainOriginalAttributes() {
+        TerminalBuffer buffer = new TerminalBuffer(8, 3, 100);
+        CellAttributes original = CellAttributes.DEFAULT.withForeground(Color.RED);
+        CellAttributes inserted = CellAttributes.DEFAULT.withForeground(Color.BLUE);
+
+        // Fill cols 0-2 with RED attributes
+        for (int c = 0; c < 3; c++) {
+            buffer.getScreen()[0].setCell(c,
+                    new com.terminal.model.Cell('A', original));
+        }
+
+        buffer.setCurrentAttributes(inserted);
+        buffer.setCursor(0, 0);
+        buffer.insert("X");
+
+        assertThat(buffer.getScreen()[0].getCell(0).attributes()).isEqualTo(inserted);
+        assertThat(buffer.getScreen()[0].getCell(1).attributes()).isEqualTo(original);
+        assertThat(buffer.getScreen()[0].getCell(2).attributes()).isEqualTo(original);
+    }
+
+    @Test
+    void insertUpdatesCursorToOnePassLastInsertedChar() {
+        TerminalBuffer buffer = new TerminalBuffer(10, 3, 100);
+        buffer.setCursor(1, 3);
+        buffer.insert("ABC");
+        assertThat(buffer.getCursorRow()).isEqualTo(1);
+        assertThat(buffer.getCursorCol()).isEqualTo(6);
+    }
+
+    @Test
+    void insertAtColZeroOfEmptyLineNoSpill() {
+        TerminalBuffer buffer = new TerminalBuffer(10, 3, 100);
+        buffer.insert("Hi");
+        assertThat(buffer.getScreen()[0].getCell(0).character()).isEqualTo('H');
+        assertThat(buffer.getScreen()[0].getCell(1).character()).isEqualTo('i');
+        assertThat(buffer.getScrollbackSize()).isZero();
+        assertThat(buffer.getCursorRow()).isEqualTo(0);
+        assertThat(buffer.getCursorCol()).isEqualTo(2);
+    }
+
+    @Test
+    void insertOverflowSpillsToNextLine() {
+        // width=5: line0=[A,B,C,D,E], insert "XY" at col 2
+        // line0 → [A,B,X,Y,C], spill [D,E] → line1
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
+        fillLine(buffer.getScreen()[0], "ABCDE");
+        buffer.setCursor(0, 2);
+
+        buffer.insert("XY");
+
+        assertThat(buffer.getScreen()[0].getCell(2).character()).isEqualTo('X');
+        assertThat(buffer.getScreen()[0].getCell(3).character()).isEqualTo('Y');
+        assertThat(buffer.getScreen()[0].getCell(4).character()).isEqualTo('C');
+        assertThat(buffer.getScreen()[1].getCell(0).character()).isEqualTo('D');
+        assertThat(buffer.getScreen()[1].getCell(1).character()).isEqualTo('E');
+    }
+
+    @Test
+    void insertSpillIsRecursivePushesNextLineRight() {
+        // width=5, height=3: line0=[ABCDE], line1=[FGHIJ]
+        // insert "X" at (0,0): line0→[X,A,B,C,D] spill [E] → line1
+        // line1→[E,F,G,H,I] spill [J] → line2
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
+        fillLine(buffer.getScreen()[0], "ABCDE");
+        fillLine(buffer.getScreen()[1], "FGHIJ");
+        buffer.setCursor(0, 0);
+
+        buffer.insert("X");
+
+        assertThat(buffer.getScreen()[0].getCell(0).character()).isEqualTo('X');
+        assertThat(buffer.getScreen()[0].getCell(4).character()).isEqualTo('D');
+        assertThat(buffer.getScreen()[1].getCell(0).character()).isEqualTo('E');
+        assertThat(buffer.getScreen()[1].getCell(4).character()).isEqualTo('I');
+        assertThat(buffer.getScreen()[2].getCell(0).character()).isEqualTo('J');
+    }
+
+    @Test
+    void insertSpillPastLastRowTriggersScroll() {
+        // width=5, height=2: line0=[ABCDE], line1=[FGHIJ]
+        // insert "X" at (0,0): line0→[X,A,B,C,D], spill [E] → line1
+        // line1→[E,F,G,H,I], spill [J] → row 2 >= height → scrollUp
+        TerminalBuffer buffer = new TerminalBuffer(5, 2, 100);
+        fillLine(buffer.getScreen()[0], "ABCDE");
+        fillLine(buffer.getScreen()[1], "FGHIJ");
+        buffer.setCursor(0, 0);
+
+        buffer.insert("X");
+
+        assertThat(buffer.getScrollbackSize()).isEqualTo(1);
+        // After scroll, line0 (with X,A,B,C,D) goes to scrollback;
+        // screen[0] = [E,F,G,H,I], screen[1] = [J,_,_,_,_]
+        assertThat(buffer.getScreen()[0].getCell(0).character()).isEqualTo('E');
+        assertThat(buffer.getScreen()[1].getCell(0).character()).isEqualTo('J');
+    }
+
+    @Test
+    void insertNullIsNoOp() {
+        TerminalBuffer buffer = new TerminalBuffer(10, 3, 100);
+        buffer.setCursor(1, 2);
+        buffer.insert(null);
+        assertThat(buffer.getCursorRow()).isEqualTo(1);
+        assertThat(buffer.getCursorCol()).isEqualTo(2);
+    }
+
+    @Test
+    void insertEmptyStringIsNoOp() {
+        TerminalBuffer buffer = new TerminalBuffer(10, 3, 100);
+        buffer.setCursor(1, 2);
+        buffer.insert("");
+        assertThat(buffer.getCursorRow()).isEqualTo(1);
+        assertThat(buffer.getCursorCol()).isEqualTo(2);
+    }
 }

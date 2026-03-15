@@ -4,6 +4,7 @@ import com.terminal.model.Cell;
 import com.terminal.model.CellAttributes;
 
 import java.util.ArrayDeque;
+import java.util.Arrays;
 
 public final class TerminalBuffer {
 
@@ -103,6 +104,86 @@ public final class TerminalBuffer {
     public void setCurrentAttributes(CellAttributes attributes) {
         if (attributes == null) throw new NullPointerException("attributes must not be null");
         this.currentAttributes = attributes;
+    }
+
+    public void insert(String text) {
+        if (text == null || text.isEmpty()) return;
+
+        Cell[] newCells = new Cell[text.length()];
+        for (int i = 0; i < text.length(); i++) {
+            newCells[i] = new Cell(text.charAt(i), currentAttributes);
+        }
+
+        insertCellsAt(cursorRow, cursorCol, newCells);
+
+        // Advance cursor — same rule as write
+        for (int i = 0; i < text.length(); i++) {
+            cursorCol++;
+            if (cursorCol >= width) {
+                cursorCol = 0;
+                cursorRow++;
+                if (cursorRow >= height) {
+                    scrollUp();
+                    cursorRow = height - 1;
+                }
+            }
+        }
+    }
+
+    private void insertCellsAt(int row, int col, Cell[] cells) {
+        if (cells.length == 0) return;
+
+        TerminalLine line = screen[row];
+        int slotsAvailable = width - col;
+
+        // Save the existing tail (col to end-of-line), copying each cell
+        Cell[] tail = new Cell[slotsAvailable];
+        for (int i = 0; i < slotsAvailable; i++) {
+            Cell src = line.getCell(col + i);
+            tail[i] = new Cell(src.character(), src.attributes());
+        }
+
+        // Place inserted cells (at most slotsAvailable)
+        int placed = Math.min(cells.length, slotsAvailable);
+        for (int i = 0; i < placed; i++) {
+            line.setCell(col + i, cells[i]);
+        }
+
+        // Place as much tail as fits after the inserted cells
+        int tailStart = col + placed;               // = col + placed
+        int tailFits  = width - tailStart;          // = slotsAvailable - placed
+        for (int i = 0; i < tailFits; i++) {
+            line.setCell(tailStart + i, tail[i]);
+        }
+
+        // Compute spill — the cells that were pushed past end-of-line
+        Cell[] spill;
+        if (cells.length <= slotsAvailable) {
+            // Last `cells.length` elements of tail no longer fit
+            spill = Arrays.copyOfRange(tail, slotsAvailable - cells.length, slotsAvailable);
+        } else {
+            // All of tail is displaced, plus the excess inserted cells
+            int excess = cells.length - slotsAvailable;
+            spill = new Cell[excess + tail.length];
+            System.arraycopy(cells, slotsAvailable, spill, 0, excess);
+            System.arraycopy(tail, 0, spill, excess, tail.length);
+        }
+
+        if (hasContent(spill)) {
+            int nextRow = row + 1;
+            if (nextRow >= height) {
+                scrollUp();
+                nextRow = height - 1;
+            }
+            insertCellsAt(nextRow, 0, spill);
+        }
+    }
+
+    private static boolean hasContent(Cell[] cells) {
+        for (Cell c : cells) {
+            if (!c.isEmpty()) return true;
+        }
+        return false;
     }
 
     private void scrollUp() {
