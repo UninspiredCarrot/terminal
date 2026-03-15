@@ -20,7 +20,7 @@ public final class TerminalBuffer {
     public TerminalBuffer(int width, int height, int maxScrollback) {
         if (width <= 0)       throw new IllegalArgumentException("width must be > 0, got: " + width);
         if (height <= 0)      throw new IllegalArgumentException("height must be > 0, got: " + height);
-        if (maxScrollback <= 0) throw new IllegalArgumentException("maxScrollback must be > 0, got: " + maxScrollback);
+        if (maxScrollback < 0) throw new IllegalArgumentException("maxScrollback must be >= 0, got: " + maxScrollback);
 
         this.width = width;
         this.height = height;
@@ -212,12 +212,36 @@ public final class TerminalBuffer {
     }
 
     private void scrollUp() {
-        if (scrollback.size() >= maxScrollback) {
-            scrollback.pollFirst();
+        if (maxScrollback > 0) {
+            if (scrollback.size() >= maxScrollback) {
+                scrollback.pollFirst();
+            }
+            scrollback.addLast(screen[0]);
         }
-        scrollback.addLast(screen[0]);
         System.arraycopy(screen, 1, screen, 0, height - 1);
         screen[height - 1] = new TerminalLine(width);
+    }
+
+    public String getScreenContent() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < height; i++) {
+            if (i > 0) sb.append('\n');
+            sb.append(screen[i].toString());
+        }
+        return sb.toString();
+    }
+
+    public String getFullContent() {
+        StringBuilder sb = new StringBuilder();
+        TerminalLine[] sbLines = getScrollbackLines();
+        for (TerminalLine line : sbLines) {
+            sb.append(line.toString()).append('\n');
+        }
+        for (int i = 0; i < height; i++) {
+            if (i > 0) sb.append('\n');
+            sb.append(screen[i].toString());
+        }
+        return sb.toString();
     }
 
     public int getTotalRows() {

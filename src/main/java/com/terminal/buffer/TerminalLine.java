@@ -33,6 +33,15 @@ public final class TerminalLine {
         cells[column] = cell;
     }
 
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder(cells.length);
+        for (Cell cell : cells) {
+            sb.append(cell.character());
+        }
+        return sb.toString();
+    }
+
     private void checkBounds(int column) {
         if (column < 0 || column >= cells.length) {
             throw new IndexOutOfBoundsException(

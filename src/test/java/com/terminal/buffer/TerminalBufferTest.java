@@ -202,7 +202,6 @@ class TerminalBufferTest {
         "-1, 24, 1000",
         "80,  0, 1000",
         "80, -1, 1000",
-        "80, 24,    0",
         "80, 24,   -1",
     })
     void invalidConstructorArgsThrowIllegalArgumentException(int width, int height, int maxScrollback) {
@@ -761,5 +760,210 @@ class TerminalBufferTest {
         TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
         assertThatExceptionOfType(IndexOutOfBoundsException.class)
                 .isThrownBy(() -> buffer.getLine(row));
+    }
+
+    // --- getScreenContent / getFullContent ---
+
+    @Test
+    void getScreenContentOnFreshBufferIsAllBlankLines() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
+        String blank = "     "; // 5 spaces
+        assertThat(buffer.getScreenContent()).isEqualTo(
+                blank + "\n" + blank + "\n" + blank);
+    }
+
+    @Test
+    void getScreenContentReflectsWrittenContent() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 2, 100);
+        buffer.write("Hello");
+
+        // Line 0: "Hello", line 1: all spaces
+        assertThat(buffer.getScreenContent()).isEqualTo("Hello\n     ");
+    }
+
+    @Test
+    void getFullContentWithNoScrollbackMatchesGetScreenContent() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 2, 100);
+        buffer.write("Hi");
+
+        assertThat(buffer.getFullContent()).isEqualTo(buffer.getScreenContent());
+    }
+
+    @Test
+    void getFullContentWithScrollbackPutsScrollbackLinesFirst() {
+        // Use fillLine so cursor movement never triggers incidental scrolls
+        TerminalBuffer buffer = new TerminalBuffer(5, 2, 100);
+        buffer.fillLine(0, 'A', CellAttributes.DEFAULT);
+        buffer.insertLineAtBottom();             // "AAAAA" → scrollback[0]
+        buffer.fillLine(0, 'B', CellAttributes.DEFAULT);
+        buffer.insertLineAtBottom();             // "BBBBB" → scrollback[1]
+        buffer.fillLine(0, 'C', CellAttributes.DEFAULT); // screen[0] = "CCCCC"
+        buffer.fillLine(1, 'D', CellAttributes.DEFAULT); // screen[1] = "DDDDD"
+
+        String full = buffer.getFullContent();
+        String[] lines = full.split("\n");
+        assertThat(lines).hasSize(4);
+        assertThat(lines[0]).isEqualTo("AAAAA"); // scrollback[0]
+        assertThat(lines[1]).isEqualTo("BBBBB"); // scrollback[1]
+        assertThat(lines[2]).isEqualTo("CCCCC"); // screen[0]
+        assertThat(lines[3]).isEqualTo("DDDDD"); // screen[1]
+    }
+
+    @Test
+    void getFullContentLineOrderMatchesUnifiedCoordinateSystem() {
+        TerminalBuffer buffer = new TerminalBuffer(4, 2, 100);
+        buffer.setCursor(0, 0); buffer.write("AAAA");
+        buffer.insertLineAtBottom();             // "AAAA" → scrollback[0]; unified row 0
+        buffer.setCursor(0, 0); buffer.write("BBBB"); // screen[0] → unified row 1
+
+        assertThat(buffer.getCharAt(0, 0)).isEqualTo('A');
+        assertThat(buffer.getCharAt(1, 0)).isEqualTo('B');
+
+        String[] lines = buffer.getFullContent().split("\n");
+        assertThat(lines[0]).startsWith("A");
+        assertThat(lines[1]).startsWith("B");
+    }
+
+    // --- edge cases ---
+
+    @Test
+    void oneByOneBufferWriteInsertsScrollAndCursorMovementAllWork() {
+        TerminalBuffer buffer = new TerminalBuffer(1, 1, 2);
+
+        // Write 'A': fills (0,0), cursor wraps col→0, row→1 ≥ height → scroll, row=0.
+        // 'A' line is in scrollback; screen[0] is now a fresh empty line.
+        buffer.write("A");
+        assertThat(buffer.getScrollbackSize()).isEqualTo(1);
+        assertThat(buffer.getScrollbackLines()[0].getCell(0).character()).isEqualTo('A');
+        assertThat(buffer.getScreen()[0].getCell(0).isEmpty()).isTrue();
+        assertThat(buffer.getCursorRow()).isZero();
+        assertThat(buffer.getCursorCol()).isZero();
+
+        // Insert 'B': same wrap/scroll behaviour; 'B' also ends up in scrollback.
+        buffer.insert("B");
+        assertThat(buffer.getScrollbackSize()).isEqualTo(2);
+        assertThat(buffer.getScrollbackLines()[1].getCell(0).character()).isEqualTo('B');
+        assertThat(buffer.getCursorRow()).isZero();
+        assertThat(buffer.getCursorCol()).isZero();
+
+        // Explicit scroll: fresh empty screen[0] scrolls off, new empty line created.
+        buffer.insertLineAtBottom();
+        // maxScrollback=2, so oldest ('A') is dropped; scrollback now holds [B, empty]
+        assertThat(buffer.getScrollbackSize()).isEqualTo(2);
+
+        // Cursor movement all clamps at (0,0) since height=width=1
+        buffer.moveCursorUp(5);
+        buffer.moveCursorDown(5);
+        buffer.moveCursorLeft(5);
+        buffer.moveCursorRight(5);
+        assertThat(buffer.getCursorRow()).isZero();
+        assertThat(buffer.getCursorCol()).isZero();
+    }
+
+    @Test
+    void writeExactlyFillingOneRowLeavesCursorAtStartOfNextRow() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
+        buffer.write("ABCDE"); // exactly width=5 chars
+
+        assertThat(buffer.getScreen()[0].toString()).isEqualTo("ABCDE");
+        assertThat(buffer.getCursorRow()).isEqualTo(1);
+        assertThat(buffer.getCursorCol()).isEqualTo(0);
+        assertThat(buffer.getScrollbackSize()).isZero(); // no scroll needed
+    }
+
+    @Test
+    void insertIntoFullScreenCascadesSpillAndTriggersScroll() {
+        // width=3, height=2: screen[0]="ABC", screen[1]="DEF"
+        // Insert "X" at (0,0):
+        //   line0 → [X,A,B], spill [C] → line1
+        //   line1 → [C,D,E], spill [F] → past bottom → scroll
+        //   scrollback gets line0 ([X,A,B]); screen[0]=[C,D,E]; screen[1]=[F,_,_]
+        TerminalBuffer buffer = new TerminalBuffer(3, 2, 100);
+        buffer.fillLine(0, 'A', CellAttributes.DEFAULT);
+        buffer.getScreen()[0].setCell(1, new Cell('B', CellAttributes.DEFAULT));
+        buffer.getScreen()[0].setCell(2, new Cell('C', CellAttributes.DEFAULT));
+        buffer.fillLine(1, 'D', CellAttributes.DEFAULT);
+        buffer.getScreen()[1].setCell(1, new Cell('E', CellAttributes.DEFAULT));
+        buffer.getScreen()[1].setCell(2, new Cell('F', CellAttributes.DEFAULT));
+
+        buffer.insert("X");
+
+        assertThat(buffer.getScrollbackSize()).isEqualTo(1);
+        assertThat(buffer.getScreen()[0].getCell(0).character()).isEqualTo('C');
+        assertThat(buffer.getScreen()[0].getCell(1).character()).isEqualTo('D');
+        assertThat(buffer.getScreen()[0].getCell(2).character()).isEqualTo('E');
+        assertThat(buffer.getScreen()[1].getCell(0).character()).isEqualTo('F');
+    }
+
+    @Test
+    void scrollbackAtMaxCapacityDropsOldestLineOnEachScroll() {
+        // maxScrollback=2; scroll 4 times with marked lines; only last 2 retained
+        TerminalBuffer buffer = new TerminalBuffer(5, 2, 2);
+        for (char c = 'A'; c <= 'D'; c++) {
+            buffer.fillLine(0, c, CellAttributes.DEFAULT);
+            buffer.insertLineAtBottom();
+        }
+
+        assertThat(buffer.getScrollbackSize()).isEqualTo(2);
+        TerminalLine[] sbLines = buffer.getScrollbackLines();
+        // 'A' and 'B' were dropped; 'C' and 'D' remain
+        assertThat(sbLines[0].getCell(0).character()).isEqualTo('C');
+        assertThat(sbLines[1].getCell(0).character()).isEqualTo('D');
+    }
+
+    @Test
+    void maxScrollbackZeroDiscardsAllScrolledLinesImmediately() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 2, 0);
+        buffer.fillLine(0, 'X', CellAttributes.DEFAULT);
+        buffer.insertLineAtBottom();
+        buffer.insertLineAtBottom();
+        buffer.insertLineAtBottom();
+
+        assertThat(buffer.getScrollbackSize()).isZero();
+        assertThat(buffer.getFullContent()).isEqualTo(buffer.getScreenContent());
+    }
+
+    @Test
+    void writeAfterClearScreenWorksNormallyOnFreshState() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 2, 100);
+        buffer.write("HELLO");
+        buffer.insertLineAtBottom();
+
+        buffer.clearScreen();
+        buffer.write("WORLD");
+
+        assertThat(buffer.getScreen()[0].toString()).isEqualTo("WORLD");
+        assertThat(buffer.getCursorRow()).isEqualTo(1);
+        assertThat(buffer.getCursorCol()).isEqualTo(0);
+    }
+
+    @Test
+    void multipleSequentialWritesCursorPositionChainsCorrectly() {
+        TerminalBuffer buffer = new TerminalBuffer(10, 3, 100);
+        buffer.write("AB");   // cursor at (0,2)
+        buffer.write("CD");   // cursor at (0,4)
+        buffer.write("EF");   // cursor at (0,6)
+
+        assertThat(buffer.getScreen()[0].toString()).isEqualTo("ABCDEF    ");
+        assertThat(buffer.getCursorRow()).isEqualTo(0);
+        assertThat(buffer.getCursorCol()).isEqualTo(6);
+    }
+
+    @Test
+    void attributesChangeBetweenWritesCellsHaveRespectiveAttributes() {
+        TerminalBuffer buffer = new TerminalBuffer(10, 2, 100);
+        CellAttributes redAttrs  = CellAttributes.DEFAULT.withForeground(Color.RED);
+        CellAttributes blueAttrs = CellAttributes.DEFAULT.withForeground(Color.BLUE);
+
+        buffer.setCurrentAttributes(redAttrs);
+        buffer.write("AB");
+        buffer.setCurrentAttributes(blueAttrs);
+        buffer.write("CD");
+
+        TerminalLine line = buffer.getScreen()[0];
+        assertThat(line.getCell(0).attributes()).isEqualTo(redAttrs);
+        assertThat(line.getCell(1).attributes()).isEqualTo(redAttrs);
+        assertThat(line.getCell(2).attributes()).isEqualTo(blueAttrs);
+        assertThat(line.getCell(3).attributes()).isEqualTo(blueAttrs);
     }
 }
