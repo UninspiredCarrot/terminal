@@ -53,4 +53,28 @@ public final class TerminalBuffer {
         this.cursorRow = row;
         this.cursorCol = col;
     }
+
+    public void moveCursorUp(int n) {
+        requireNonNegative(n, "n");
+        cursorRow = Math.max(0, cursorRow - n);
+    }
+
+    public void moveCursorDown(int n) {
+        requireNonNegative(n, "n");
+        cursorRow = Math.min(height - 1, cursorRow + n);
+    }
+
+    public void moveCursorLeft(int n) {
+        requireNonNegative(n, "n");
+        cursorCol = Math.max(0, cursorCol - n);
+    }
+
+    public void moveCursorRight(int n) {
+        requireNonNegative(n, "n");
+        cursorCol = Math.min(width - 1, cursorCol + n);
+    }
+
+    private static void requireNonNegative(int n, String name) {
+        if (n < 0) throw new IllegalArgumentException(name + " must be >= 0, got: " + n);
+    }
 }
