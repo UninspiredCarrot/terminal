@@ -13,6 +13,7 @@ public final class TerminalBuffer {
     private final ArrayDeque<TerminalLine> scrollback;
     private int cursorRow;
     private int cursorCol;
+    private CellAttributes currentAttributes;
 
     public TerminalBuffer(int width, int height, int maxScrollback) {
         if (width <= 0)       throw new IllegalArgumentException("width must be > 0, got: " + width);
@@ -29,7 +30,7 @@ public final class TerminalBuffer {
         this.scrollback = new ArrayDeque<>();
         this.cursorRow = 0;
         this.cursorCol = 0;
-        CellAttributes currentAttributes = CellAttributes.DEFAULT;
+        this.currentAttributes = CellAttributes.DEFAULT;
     }
 
     TerminalLine[] getScreen()     { return screen; }
@@ -72,6 +73,13 @@ public final class TerminalBuffer {
     public void moveCursorRight(int n) {
         requireNonNegative(n, "n");
         cursorCol = Math.min(width - 1, cursorCol + n);
+    }
+
+    public CellAttributes getCurrentAttributes() { return currentAttributes; }
+
+    public void setCurrentAttributes(CellAttributes attributes) {
+        if (attributes == null) throw new NullPointerException("attributes must not be null");
+        this.currentAttributes = attributes;
     }
 
     private static void requireNonNegative(int n, String name) {

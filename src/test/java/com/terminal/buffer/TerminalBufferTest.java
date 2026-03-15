@@ -6,8 +6,12 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import com.terminal.model.Color;
+import com.terminal.model.Style;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 class TerminalBufferTest {
 
@@ -203,5 +207,30 @@ class TerminalBufferTest {
     void invalidConstructorArgsThrowIllegalArgumentException(int width, int height, int maxScrollback) {
         assertThatExceptionOfType(IllegalArgumentException.class)
                 .isThrownBy(() -> new TerminalBuffer(width, height, maxScrollback));
+    }
+
+    // --- currentAttributes ---
+
+    @Test
+    void defaultCurrentAttributesIsCellAttributesDefault() {
+        TerminalBuffer buffer = new TerminalBuffer(80, 24, 1000);
+        assertThat(buffer.getCurrentAttributes()).isEqualTo(CellAttributes.DEFAULT);
+    }
+
+    @Test
+    void setAndGetCurrentAttributesRoundTrips() {
+        TerminalBuffer buffer = new TerminalBuffer(80, 24, 1000);
+        CellAttributes attrs = CellAttributes.DEFAULT
+                .withForeground(Color.GREEN)
+                .withStyle(Style.BOLD);
+        buffer.setCurrentAttributes(attrs);
+        assertThat(buffer.getCurrentAttributes()).isEqualTo(attrs);
+    }
+
+    @Test
+    void setCurrentAttributesNullThrowsNullPointerException() {
+        TerminalBuffer buffer = new TerminalBuffer(80, 24, 1000);
+        assertThatNullPointerException()
+                .isThrownBy(() -> buffer.setCurrentAttributes(null));
     }
 }
