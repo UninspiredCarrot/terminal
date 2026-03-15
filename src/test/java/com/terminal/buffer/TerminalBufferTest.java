@@ -1,5 +1,6 @@
 package com.terminal.buffer;
 
+import com.terminal.model.Cell;
 import com.terminal.model.CellAttributes;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -598,5 +599,60 @@ class TerminalBufferTest {
         TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
         assertThatNullPointerException()
                 .isThrownBy(() -> buffer.fillLine(0, 'X', null));
+    }
+
+    // --- clearScreen / clearAll ---
+
+    @Test
+    void clearScreenResetsAllCellsAndCursor() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 3, 100);
+        buffer.setCursor(2, 4);
+        buffer.write("HELLO");
+        buffer.insertLineAtBottom(); // put something in scrollback
+
+        buffer.clearScreen();
+
+        assertThat(buffer.getCursorRow()).isZero();
+        assertThat(buffer.getCursorCol()).isZero();
+        for (int row = 0; row < buffer.getHeight(); row++) {
+            for (int col = 0; col < buffer.getWidth(); col++) {
+                Cell cell = buffer.getScreen()[row].getCell(col);
+                assertThat(cell.character()).as("row %d col %d char", row, col).isEqualTo(' ');
+                assertThat(cell.attributes()).as("row %d col %d attrs", row, col)
+                        .isEqualTo(CellAttributes.DEFAULT);
+            }
+        }
+    }
+
+    @Test
+    void clearScreenPreservesScrollback() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 2, 100);
+        buffer.insertLineAtBottom();
+        buffer.insertLineAtBottom();
+        int scrollbackBefore = buffer.getScrollbackSize();
+
+        buffer.clearScreen();
+
+        assertThat(buffer.getScrollbackSize()).isEqualTo(scrollbackBefore);
+    }
+
+    @Test
+    void clearAllClearsBothScreenAndScrollback() {
+        TerminalBuffer buffer = new TerminalBuffer(5, 2, 100);
+        buffer.write("HI");
+        buffer.insertLineAtBottom();
+        buffer.insertLineAtBottom();
+
+        buffer.clearAll();
+
+        assertThat(buffer.getScrollbackSize()).isZero();
+        assertThat(buffer.getCursorRow()).isZero();
+        assertThat(buffer.getCursorCol()).isZero();
+        for (int row = 0; row < buffer.getHeight(); row++) {
+            for (int col = 0; col < buffer.getWidth(); col++) {
+                assertThat(buffer.getScreen()[row].getCell(col).isEmpty())
+                        .as("row %d col %d", row, col).isTrue();
+            }
+        }
     }
 }

@@ -90,6 +90,19 @@ public final class TerminalBuffer {
         }
     }
 
+    public void clearScreen() {
+        for (int i = 0; i < height; i++) {
+            screen[i] = new TerminalLine(width);
+        }
+        cursorRow = 0;
+        cursorCol = 0;
+    }
+
+    public void clearAll() {
+        clearScreen();
+        scrollback.clear();
+    }
+
     public void insertLineAtBottom() {
         scrollUp();
     }
